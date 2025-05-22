@@ -16,51 +16,63 @@ def set_default_content_type(response):
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.json
-    leads = data.get("leads", {}).get("add", [])
-    for lead in leads:
-        lead_id = lead["id"]
-        # Obtener el lead completo
-        r = requests.get(
-            f"https://{SUBDOMINIO}.kommo.com/api/v4/leads/{lead_id}",
-            headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}
-        )
-        lead_data = r.json()
-        campos = lead_data.get("custom_fields_values", [])
+    try:
+        headers = dict(request.headers)
+        raw_data = request.get_data(as_text=True)
+        
+        print("🔔 Headers recibidos:", headers)
+        print("📦 Cuerpo crudo recibido:", raw_data)
 
-        # Buscar el valor del campo contador
-        valor_actual = 0
-        for campo in campos:
-            if str(campo["field_id"]) == CAMPO_CONTADOR:
-                try:
-                    valor_actual = int(campo["values"][0]["value"])
-                except:
-                    valor_actual = 0
-                break
+        data = request.get_json(force=True)
 
-        nuevo_valor = valor_actual + 1
+        print("📘 JSON parseado:", data)
 
-        # Preparar actualización
-        payload = {
-            "custom_fields_values": [
-                {
-                    "field_id": int(CAMPO_TOTAL),
-                    "values": [{"value": nuevo_valor}]
-                }
-            ]
-        }
+        leads = data.get("leads", {}).get("add", [])
+        for lead in leads:
+            lead_id = lead["id"]
 
-        # Enviar actualización al lead
-        requests.patch(
-            f"https://{SUBDOMINIO}.kommo.com/api/v4/leads/{lead_id}",
-            headers={
-                "Authorization": f"Bearer {ACCESS_TOKEN}",
-                "Content-Type": "application/json"
-            },
-            json=payload
-        )
+            r = requests.get(
+                f"https://{SUBDOMINIO}.kommo.com/api/v4/leads/{lead_id}",
+                headers={"Authorization": f"Bearer {ACCESS_TOKEN}"}
+            )
+            lead_data = r.json()
+            campos = lead_data.get("custom_fields_values", [])
 
-    return "OK", 200
+            valor_actual = 0
+            for campo in campos:
+                if str(campo["field_id"]) == CAMPO_CONTADOR:
+                    try:
+                        valor_actual = int(campo["values"][0]["value"])
+                    except:
+                        valor_actual = 0
+                    break
+
+            nuevo_valor = valor_actual + 1
+
+            payload = {
+                "custom_fields_values": [
+                    {
+                        "field_id": int(CAMPO_TOTAL),
+                        "values": [{"value": nuevo_valor}]
+                    }
+                ]
+            }
+
+            requests.patch(
+                f"https://{SUBDOMINIO}.kommo.com/api/v4/leads/{lead_id}",
+                headers={
+                    "Authorization": f"Bearer {ACCESS_TOKEN}",
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+
+        return {"status": "ok"}, 200
+    
+    except Exception as e:
+        print("❌ Error procesando webhook:", str(e))
+        return {"error": "Error procesando webhook", "details": str(e)}, 500
+
 
 
 @app.route("/", methods=["GET"])
